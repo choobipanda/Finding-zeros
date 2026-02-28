@@ -243,15 +243,36 @@ def hybrid(coefficents, left, right, max_iter, eps, delta):
     '''
     hybrid method: bisection then newton
     '''
-    #bisection
-    root, iterations, _ = bisection(coefficents, left, right, 10, eps)
+    a = left
+    b = right
+    f_a = evaluate_polynomial(coefficents, a)
+    f_b = evaluate_polynomial(coefficents, b)
 
-    #newton
-    new_root, new_iterations, success = newton(
-        coefficents, root, max_iter-iterations, eps, delta
-    )
+    iterations = 0
+    threshold = 1e-2
 
-    return new_root, iterations + new_iterations, success
+    while iterations < max_iter:
+        #bisection
+        mid = compute_midpoint(a, b)
+        f_mid = evaluate_polynomial(coefficents, mid)
+
+        iterations += 1
+
+        # check if we can switch to Newton
+        if abs(b-a) < threshold:
+            remaining_iters = max_iter - iterations
+            # start Newton from midpoint
+            new_root, new_iterations, success = newton(coefficents, mid, remaining_iters, eps, delta)
+            return new_root, iterations + new_iterations, success
+
+        if f_a*f_mid < 0:
+            b = mid
+            f_b = f_mid
+        else:
+            a = mid
+            f_a = f_mid
+    
+    return mid, iterations, False
 
 #Main
 def polRoot():
