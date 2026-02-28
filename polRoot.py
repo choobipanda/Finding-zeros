@@ -39,7 +39,6 @@ and to run secant, with initial points 0 and 1, for 100,000 iterations:
 > polRoot -sec -maxIter 100000 0 1 fun1.pol
 
 '''
-
 def parse_args():
     '''
     get filename, method, max iterations, initial points 
@@ -70,7 +69,7 @@ def parse_args():
         sys.exit(1)
 
     nums = []
-    for arg in args[:-1]:
+    for arg in args:
         try:
             nums.append(float(arg))
         except:
@@ -108,12 +107,8 @@ def evaluate_polynomial(coefficents, x):
     evaluates polynomial at x
     '''
     result = 0
-    n = len(coefficents)
-
-    for i in range(n):
-        power = n-i-1
-        result += coefficents[i]*(x**power)
-
+    for c in coefficents:
+        result = (result*x) + c
     return result
 
 #bisection helpers
@@ -133,20 +128,25 @@ def check_convergence(left, right, f_mid, eps):
     '''
     stopping condition
     '''
-    return abs(right-left)/2 < eps or abs(f_mid) == 0
+    return abs(right-left)/2 < eps or abs(f_mid) < eps
 
 #bisection method
 def bisection(coefficents, left, right, max_iter, eps):
     '''
     bisection method 
     '''
-
     f_left = evaluate_polynomial(coefficents, left)
     f_right = evaluate_polynomial(coefficents, right)
 
+    if abs(f_left) < eps:
+        return left, 0, True
+
+    if abs(f_right) < eps:
+        return right, 0, True
+
     if not check_interval(f_left, f_right):
         print("invalid values")
-        return None, 0, False
+        return left, 0, False
     
     for iteration in range(1, max_iter+1):
         mid = compute_midpoint(left, right)
@@ -180,7 +180,7 @@ def evaluate_derivative(coefficents, x):
 
     for i in range(n-1):
         power = n-i-1
-        result += power * coefficents[i] * (x**(power-1))
+        result = (result*x) + (power*coefficents[i])
 
     return result
 
@@ -194,7 +194,8 @@ def newton(coefficents, intial, max_iter, eps, delta):
     for iteration in range(1, max_iter+1):
         derivative_value = evaluate_derivative(coefficents, current)
         f_value = evaluate_polynomial(coefficents, current)
-        if abs(derivative_value) < delta:
+
+        if check_small_slope(derivative_value, delta):
             print("small slope")
             return current, iteration, False
 
@@ -202,8 +203,8 @@ def newton(coefficents, intial, max_iter, eps, delta):
         next_value = current-step
 
         if abs(step) < eps:
-            return next_value
-        
+            return next_value, iteration, True
+
         current = next_value
 
     return current, max_iter, False
@@ -213,38 +214,44 @@ def secant(coefficents, first_point, second_point, max_iter, eps):
     '''
     secant method
     '''
-    current = first_point
-    previous = second_point
+    x0 = first_point
+    x1 = second_point
 
-    current_value = evaluate_polynomial(coefficents, current)
-    previous_value = evaluate_polynomial(coefficents, previous)
-
-    if abs(current_value) > abs(previous_value):
-        current, previous = previous, current
-        current_value, previous_value = previous_value, current_value
+    f0 = evaluate_polynomial(coefficents, x0)
+    f1 = evaluate_polynomial(coefficents, x1)
 
     for iteration in range(1, max_iter+1):
-        if abs(current_value) > abs(previous_value):
-            current, previous = previous, current
-            current_value, previous_value = previous_value, current_value
+        if f1-f0 == 0:
+            return x1, iteration, False
 
-        if previous_value - current_value == 0:
-            return current, iteration, False
-        
-        correction = (previous-current)/(previous_value-current_value)
+        x2 = x1 - ((f1*(x1-x0)) / (f1-f0))
 
-        previous = current
-        previous_value = current_value
+        if abs(x2-x1) < eps:
+            return x2, iteration, True
 
-        correction = correction*current_value
+        # shift forward
+        x0 = x1
+        f0 = f1
 
-        if abs(correction) < eps:
-            return current, iteration, True
-        
-        current = current-correction
-        current_value = evaluate_polynomial(coefficents, current)
+        x1 = x2
+        f1 = evaluate_polynomial(coefficents, x1)
 
-    return current, max_iter, False
+    return x1, max_iter, False
+
+#hybrid
+def hybrid(coefficents, left, right, max_iter, eps, delta):
+    '''
+    hybrid method: bisection then newton
+    '''
+    #bisection
+    root, iterations, _ = bisection(coefficents, left, right, 10, eps)
+
+    #newton
+    new_root, new_iterations, success = newton(
+        coefficents, root, max_iter-iterations, eps, delta
+    )
+
+    return new_root, iterations + new_iterations, success
 
 #Main
 def polRoot():
@@ -258,6 +265,7 @@ def polRoot():
     coeffs = read_polynomial(filename)
 
     eps = np.finfo(np.float32).eps
+    delta = eps
 
     if method == "bisection":
         if len(nums) < 2:
@@ -267,7 +275,25 @@ def polRoot():
         right = nums[-1]
         root, iterations, success = bisection(coeffs, left, right, max_iter, eps)
 
-    write_solution(filename, method, root, iterations, success)
+    elif method == "newton":
+        if len(nums) < 1:
+            print("error: need 1 intital point")
+            sys.exit(1)
+        root, iterations, success = newton(coeffs, nums[-1], max_iter, eps, delta)
+
+    elif method == "secant":
+        if len(nums) < 2:
+            print("error: need 2 intital points")
+            sys.exit(1)
+        root, iterations, success = secant(coeffs, nums[-2], nums[-1], max_iter, eps)
+
+    elif method == "hybrid":
+        if len(nums) < 2:
+            print("error: need 2 intital points")
+            sys.exit(1)
+        root, iterations, success = hybrid(coeffs, nums[-2], nums[-1], max_iter, eps, delta)
+
+    write_solution(filename, root, iterations, success)
 
 if __name__ == "__main__":
     polRoot()
